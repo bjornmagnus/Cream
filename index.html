@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+
+	<head> 
+		<title> scheme
+		</title>
+		<meta charset="utf-8"> 
+		<style type="text/css" >
+			html{
+				height:100%;
+			}
+			body {
+				margin:0 auto; 
+				padding:0; 
+				overflow:hidden;
+				font-size:15px;
+				height:100%;
+			}
+			#in {
+				border: 0;
+				width:90%;
+				outline:none;
+				font-family:monospace;
+				font-size:15px;
+								background-color: #333;
+				color:#eee;
+			}
+			#win {
+				height:100%;
+				width:100%;
+				border: 1px solid black;
+				font-family:monospace;
+				overflow: hidden;
+				background-color: #333;
+				color:#eee;
+
+			}
+			p {
+				margin: 2px 0 2px 0;
+			}
+		</style>
+		<script>
+			var print;
+			var printEvaluated = function(evaluated){
+				if( Object.prototype.toString.call( evaluated ) === '[object Array]' ) {
+	 				evaluated = "'("+evaluated+")";
+	 				evaluated = evaluated.replace(/\,/g, " ").replace(/object Object/g, "closure").replace(/\]/g, ")").replace(/\[/g, "(");
+				}
+				print("<span style='color:#66f'>></span> " + evaluated);	 		
+			}
+			var keywords = ['define','lambda (','if', 'quote', 'eval', 'defmacro', 'list'];
+			var global;
+		</script>
+		<script type="text/javascript" src="lib/jquery-1.8.2.min.js"> </script>
+		<script type="text/javascript" src="src/cream.js"> </script>
+		<script type="text/javascript" src="lib/complete.ly.1.0.1.js"> </script>
+	</head>
+
+	<body>
+
+		<div id="win">
+			<div id="out"></div>
+			<div>
+				<span style="color:#d44;float:left;">λ&nbsp;</span>
+				<span id="acwrap" style="float:left;width:95%">
+					
+				</span>
+			</div>
+		</div>
+
+		<script>
+			
+			$.get('http://localhost:8000/cream/core.cr', function(data) {
+				data = data.replace(/\;.*/g, "").replace(/^\s*[\r\n]/gm, "")
+				evaluate(compile(parse(data)), global)
+				console.log("loaded Cream in " + (Date.now() - start) + "ms ");
+				console.log(global);
+
+			});
+
+			var history = [];
+			var hCursor = 0;
+			var comp = completely(document.getElementById("acwrap"), {
+				fontSize : '15px',
+				fontFamily : "monospace",
+			});
+			comp.options = keywords.concat(Object.keys(global));
+			comp.repaint();
+			comp.hideDropDown() 
+			setTimeout(function() {
+				comp.input.focus();
+			},0);
+			
+
+			var pushCommand = function(cmd) {
+				if (history[history.length-1] !== cmd){
+					if (100 < history.push(cmd)) {
+						history.shift();
+					}
+				}
+			}
+
+			print = function(str) {
+				//str.replace(/(lambda|define|if)/g, "(<span style='color:#2c2'>$1</span>")
+				$("#out").append("<p>" + str + "</p>")
+			}
+			var read = function(){
+				var r = txtInput.value //$("#in").val();
+				//$("#in").val("");
+				txtInput.value = "";
+				txtIrest.value = "";
+				return r;
+			}
+
+			print("<span style='color:#dc0'>;; --* Welcome to Cream v0.0.3 *-- </span>")
+			print("<span style='color:#dc0'>;; a naïve, tail call optimised, auto-curried and Scheme inspired language</span>")
+			$(document).keypress(function(e) {
+				if(e.which === 13) {
+			 		var r = read();
+			 		if (r !== "") {
+			 			
+					
+				 		print(r);
+				 		var parsed = parse(r);
+				 		// try {
+				 			var start = Date.now()
+
+				 			var evald = evaluate(compile(parsed),global);
+				 			if( Object.prototype.toString.call( evald ) === '[object Array]' ) {
+				 				evald = "'("+evald+")";
+				 				evald = evald.replace(/\,/g, " ").replace(/object Object/g, "closure").replace(/\]/g, ")").replace(/\[/g, "(");
+				 			}
+				 			print("<span style='color:#66f'>></span> " + evald);
+				 			
+				 			console.log("Evaluated in " + (Date.now() - start) + "ms")
+				 			
+				 		// } catch(e){
+				 		// 	print("<span style='color:#d44'>></span> " + e)
+				 		// 	console.log(e)
+				 		// }
+				 		comp.options = keywords.concat(Object.keys(global));
+				 		$("#win").scrollTop($("#win")[0].scrollHeight);
+				 		pushCommand(r);
+				 		hCursor = history.length;
+			 		}
+				} 
+			});
+
+			$(window).keyup(function (evt) {
+    			if (evt.keyCode === 38) {
+    				if (hCursor > 0){
+			        	hCursor--;
+			        	if (history[hCursor] !== undefined) {
+			        		txtInput.value = history[hCursor];
+			        		txtIrest.value = history[hCursor];			        		
+			        	} 
+					}
+			    } else if (evt.keyCode === 40) {
+			        if (hCursor < history.length){
+			        	hCursor++;
+			        	if (history[hCursor] !== undefined) {
+			        		txtInput.value = history[hCursor];
+			        		txtIrest.value = history[hCursor];			        		
+			        	}else {
+			        		txtInput.value = "";
+			        		txtIrest.value = "";	
+			        	}
+					}
+			    }
+			});
+
+		</script>
+
+	</body>
+</html> 
