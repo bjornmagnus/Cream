@@ -70,7 +70,7 @@
 
 		<script>
 			
-			$.get('http://localhost:8000/cream/core.cr', function(data) {
+			$.get('/cream/core.cr', function(data) {
 				data = data.replace(/\;.*/g, "").replace(/^\s*[\r\n]/gm, "")
 				evaluate(compile(parse(data)), global)
 				console.log("loaded Cream in " + (Date.now() - start) + "ms ");
