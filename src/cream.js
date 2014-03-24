@@ -713,7 +713,7 @@ var require = function(name) {
     if (name.match(/^http/) !== null) {
         url = name;
     } else {
-        url = '/' + name + '.cr';
+        url = '/cream/' + name + '.cr';
     }
     $.get(url, function(data) {
         data = data.replace(/\;.*/g, "").replace(/^\s*[\r\n]/gm, "")
