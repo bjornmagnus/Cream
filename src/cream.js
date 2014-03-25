@@ -1,27 +1,6 @@
 /* Copyright (c) 2014 Jonathan Karlsson */
 
-//"use strict";
-
-var counts = {
-    "assert": 0,
-    "evaluate": 0,
-    "compile": 0,
-    "compileIf": 0,
-    "compileDefine": 0,
-    "compileLambda": 0,
-    "expandMacro": 0,
-    "apply": 0,
-    "evalTC": 0,
-    "extendEnv": 0,
-    "makeLambda": 0,
-    "lookupVariableValue": 0,
-    "compileJS": 0,
-    "evalJS": 0
-}
-
-
 var assert = function(condition, message) {
-    //counts.assert++;
     if (!condition) {
         throw message || "Assertion failed";
     }
@@ -32,38 +11,42 @@ var start = Date.now();
 var jseval = eval;
 var evaluate = function(expr, env) {
     var res = expr(env);
-    while (res !== null && res.name === "Thunk") {
-        res = res();
+    return force(res);
+}
+
+var force = function(thunk) {
+    while (thunk !== null && thunk.name === "Thunk") {
+        thunk = thunk();
     }
-    return res;
+    return thunk;
 }
 
 var compile = function(expr) {
-    //counts["compile"]++;
     if (isSelfeval(expr)) {
         return function Compiled(_) {
             return expr;
         }
     } else if (isVariable(expr)) {
+
         return function Compiled(env) {
-            return lookupVariableValue(expr, env);
+            return lookupVariableValue(expr, env)
         }
     } else if (isIf(expr)) {
         return compileIf(expr);
-    } else if (isDefine(expr)) {
-        return compileDefine(expr);
+    } else if (isJS(expr)) {
+        return compileJS(expr);
     } else if (isLambda(expr)) {
         return compileLambda(expr);
-    } else if (isBegin(expr)) {
-        var exprs = tail(expr)
-        return compileSequence(exprs);
     } else if (isList(expr)) {
         var list = tail(expr);
         return compileList(list);
     } else if (isQuote(expr)) {
         return compileQuote(expr);
-    } else if (isJS(expr)) {
-        return compileJS(expr);
+    } else if (isDefine(expr)) {
+        return compileDefine(expr);
+    } else if (isBegin(expr)) {
+        var exprs = tail(expr)
+        return compileSequence(exprs);
     } else if (isDefMacro(expr)) {
         return compileDefMacro(expr);
     } else if (isEval(expr)) {
@@ -83,12 +66,12 @@ var compileIf = function(expr) {
 
     return function Compiled(env) {
 
-        var ePred = evaluate(predicate, env);
+        var ePred = force(predicate(env));
 
-        if (ePred == "#t" || ePred === true) {
+        if (ePred === "#t" || ePred === true) {
 
             return caseT(env);
-        } else if (ePred == "#f" || ePred === false) {
+        } else if (ePred === "#f" || ePred === false) {
 
             return caseF(env);
         } else {
@@ -99,7 +82,6 @@ var compileIf = function(expr) {
 
 var compileDefine = function(expr) {
     var name = cadr(expr);
-
     var body = compile(caddr(expr));
 
     if (typeof name === "object") {
@@ -109,6 +91,7 @@ var compileDefine = function(expr) {
             args = cadr(args);
         }
         var lambdaMaker = makeLambda(args, body);
+
         return function Compiled(env) {
             var lambda = lambdaMaker(env)
             if (env[name] === undefined) {
@@ -123,7 +106,7 @@ var compileDefine = function(expr) {
 
         return function Compiled(env) {
             if (env[name] === undefined) {
-                var evald = evaluate(body, env)
+                var evald = force(body(env))
                 env[name] = evald;
                 return evald;
             } else {
@@ -148,7 +131,6 @@ var compileSequence = function(seq) {
     var exprs = seq.map(compile);
     var length = exprs.length;
     return function Compiled(env) {
-        //console.log(exprs)
 
         for (var i = 0; i < (length - 1); i++) {
             if (typeof exprs[i] === "function" && exprs[i].name === "Compiled") {
@@ -167,13 +149,9 @@ var compileSequence = function(seq) {
 
 var evaluateSequence = function(exprs, env) {
     var length = exprs.length;
-    //console.log(exprs)
+
     for (var i = 0; i < (length - 1); i++) {
-        //if (typeof exprs[i] === "function" && exprs[i].name === "Compiled") {
         exprs[i](env);
-        //} else {
-        //    ev(exprs[i], env);
-        //}
     }
     if (typeof exprs[length - 1] === "function" && exprs[length - 1].name === "Compiled") {
         return exprs[length - 1](env);
@@ -189,7 +167,7 @@ var compileList = function(list) {
     list = list.map(compile);
     return function Compiled(env) {
         return list.map(function(list) {
-            return evaluate(list, env);
+            return force(list(env));
         })
     }
 }
@@ -197,20 +175,16 @@ var compileList = function(list) {
 
 var compileQuote = function(expr) {
     var text = cadr(expr);
-    return function Compiled(_) {
+    return function Compiled() {
         return text;
     }
 }
 
 var compileJS = function(expr) {
-    //counts["compileJS"]++;
+
     var isList = false;
-    var js = head(tail(expr));
-    var args = cadr(js);
-    if ((Object.prototype.toString.call(args) !== '[object Array]')) {
-        isList = true;
-        args = cdr(js);
-    }
+    var js = cadr(expr);
+    var args = cdr(js);
 
     var jsEvald = jseval(head(js));
 
@@ -218,37 +192,24 @@ var compileJS = function(expr) {
         args = cadr(args);
 
         var res = jsEvald.apply(this, [args]);
-        //console.log(res)
         return function Compiled() {
-            // counts["evalJS"]++;
 
             return res
         }
     } else {
-        if (isList) {
-            var compiledArgs = compileList(args);
-            return function Compiled(env) {
-                //counts["evalJS"]++;
-
-                return jsEvald.apply(this, compiledArgs(env));
-            }
-        } else {
-            return function Compiled(env) {
-                //   counts["evalJS"]++;
-
-                return jsEvald.apply(this, [evaluate(args, env)]);
-            }
+        var compiledArgs = compileList(args);
+        return function Compiled(env) {
+            return jsEvald.apply(this, compiledArgs(env));
         }
-
     }
 }
 
 var compileDefMacro = function(expr) {
     var name = cadr(expr);
-    var exp = compile(caddr(expr));
+    var compiledExpander = compile(caddr(expr));
     return function Compiled(env) {
         if (env[name] === undefined) {
-            var expander = evaluate(exp, env);
+            var expander = force(compiledExpander(env));
             var macroObject = makeMacro(expander);
             env[name] = macroObject;
 
@@ -269,17 +230,18 @@ var compileEval = function(expr) {
     if (typeof expr === "string") {
         expr = parse(expr);
     }
-    var quoted = head(tail(expr));
+    var quoted = cadr(expr);
 
     if (head(quoted) === "quote") {
-        quoted = compile(head(tail(quoted)));
+        quoted = compile(cadr(quoted));
 
         return function Compiled(env) {
             return quoted(env);
         }
     } else {
+        quoted = compile(quoted)
         return function Compiled(env) {
-            return compileEval("(eval " + evaluate(quoted, env) + ")", env);
+            return quoted(env);
         }
     }
 }
@@ -294,9 +256,16 @@ var compileApplication = function(expr) {
     return function Compiled(env) {
 
         return function Thunk() {
-            var operator = evaluate(compiledOperator, env);
+            var operator = compiledOperator(env);
+            while (operator !== null && operator.name === "Thunk") {
+                operator = operator();
+            }
 
-            if (isMacro(operator)) {
+
+            if (isPrimitiveProc(operator)) {
+                return prim[operator](compiledOperands(env));
+
+            } else if (isMacro(operator)) {
 
                 if (expanded === null) {
                     //console.log("Expanding macro " + getOperator(expr))
@@ -311,9 +280,6 @@ var compileApplication = function(expr) {
 
                 var expandedEnv = environment(head(operands))(env);
                 return expanded(expandedEnv);
-            } else if (isPrimitiveProc(operator)) {
-                return prim[operator](compiledOperands(env));
-
             } else {
 
                 return apply(operator, compiledOperands(env));
@@ -324,14 +290,12 @@ var compileApplication = function(expr) {
 
 
 var expandMacro = function(macro, args, env) {
-    //counts["expandMacro"]++;
     var expanded = apply(macro["expander"], args)
 
     while (expanded !== null && expanded.name === "Thunk") {
         expanded = expanded();
     }
-    //console.log(expanded)
-    if (Object.prototype.toString.call(expanded) === '[object Array]') {
+    if (expanded instanceof Array) {
         expanded = compile(expanded);
     }
 
@@ -341,7 +305,6 @@ var expandMacro = function(macro, args, env) {
 
 
 var apply = function(proc, args) {
-    //counts["apply"]++;
 
     if ((args.length === 1 || args.length === 0)) {
 
@@ -355,8 +318,8 @@ var apply = function(proc, args) {
         return evaluateSequence([proc.body], extendEnv(procParams(proc), args, procEnv(proc)));
 
     } else {
-
-        return apply(evaluate(proc.body, extendEnv(procParams(proc), head(args), procEnv(proc))), tail(args));
+        var env = extendEnv(procParams(proc), head(args), procEnv(proc));
+        return apply(compile(proc.body)(env), tail(args));
 
     }
 
@@ -366,7 +329,7 @@ var apply = function(proc, args) {
 }
 
 var extendEnv = function(vars, vals, parent) {
-    //counts["extendEnv"]++;
+
     var env = {};
 
     if (vars === undefined && vals === undefined) {
@@ -375,9 +338,7 @@ var extendEnv = function(vars, vals, parent) {
     } else if (vals === undefined) {
         throw ("ERROR: no arguments supplied");
 
-    } else if ((Object.prototype.toString.call(vars) === '[object Array]') &&
-        (Object.prototype.toString.call(vals) === '[object Array]') &&
-        vars.length === vals.length) {
+    } else if ((vars instanceof Array) && (vals instanceof Array) && (vars.length === vals.length)) {
 
         var length = vars.length;
         for (var i = 0; i < length; i++) {
@@ -405,11 +366,11 @@ var extendEnvironment = function(vars) {
                 return env;
             };
         }
-    } else if (Object.prototype.toString.call(vars) === '[object Array]') {
+    } else if (vars instanceof Array) {
         var varsLength = vars.length;
         return function(vals) {
             assert(vals !== undefined, "ERROR: No arguments supplied");
-            assert((Object.prototype.toString.call(vals) === '[object Array]'), "ERROR: Expected list");
+            assert((vals instanceof Array), "ERROR: Expected list");
             assert(vals.length === varsLength, "ERROR: Wrong number of arguments");
 
             return function(parent) {
@@ -420,7 +381,6 @@ var extendEnvironment = function(vars) {
                 return env;
             };
         }
-        //array
     } else if (typeof vars === "string") {
         return function(vals) {
             assert(vals !== undefined, "ERROR: No argument supplied");
@@ -435,7 +395,6 @@ var extendEnvironment = function(vars) {
 
 
 var makeLambda = function(args, body) {
-    //counts["makeLambda"]++;
     var lambda;
     if (typeof args === "string") {
         lambda = {
@@ -576,26 +535,25 @@ var prim = {
         return sum;
     },
     "-": function(args) {
-        return args.reduce(function(previousValue, currentValue, index, array) {
-            assert((typeof previousValue === "number"), "ERROR: Not a number " + previousValue);
-            assert((typeof currentValue === "number"), "ERROR: Not a number " + currentValue);
-
-            return previousValue - currentValue;
-        });
+        var diff = args[0];
+        for (var i = 1; i < args.length; i++) {
+            diff -= args[i];
+        }
+        return diff;
     },
     "*": function(args) {
-        var prod = 0;
+        var prod = 1;
         for (var i = args.length; i--;) {
             prod *= args[i];
         }
         return prod;
     },
     "/": function(args) {
-        return args.reduce(function(previousValue, currentValue, index, array) {
-            assert((typeof previousValue === "number"), "ERROR: Not a number " + previousValue);
-            assert((typeof currentValue === "number"), "ERROR: Not a number " + currentValue);
-            return previousValue / currentValue;
-        });
+        var q = args[0];
+        for (var i = 1; i < args.length; i++) {
+            q /= args[i];
+        }
+        return q;
     },
     "=": function(args) {
         var res = args.reduce(function(previousValue, currentValue, index, array) {
@@ -715,14 +673,19 @@ var require = function(name) {
     } else {
         url = '/cream/' + name + '.cr';
     }
-    $.get(url, function(data) {
-        data = data.replace(/\;.*/g, "").replace(/^\s*[\r\n]/gm, "")
-        printEvaluated(evaluate(compile(parse(data)), global));
-    }).fail(function(e) {
-        print("<span style='color:#d44'>></span> File Not Found!")
-    });
 
-    return "Loading..."
+    $.ajax({
+        url: url,
+        success: function(data) {
+            data = data.replace(/\;.*/g, "").replace(/^\s*[\r\n]/gm, "")
+            data = evaluate(compile(parse(data)), global)
+            printEvaluated(data);
+        },
+        fail: function(e) {
+            print("<span style='color:#d44'>></span> File Not Found!")
+        },
+    })
+    return "Loading";
 }
 
 var numberwang = function(s) {
@@ -771,6 +734,13 @@ var runTests = function() {
             (= 4 ((freeze 4)))\
             (let ((x 4)) (let ((y 3)) (> x y)))\
             (cond ((eq? 'else 'hello) #f) ((eq? 2 (+ 2 3)) #f) (else #t))\
+            (= 2 (/ 4 2))\
+            (eq? 3 (- 6 3))\
+            ((lambda (x) (eq? x 4)) 4)\
+            (or #t #f)\
+            (not (or #f #f))\
+            (and #t #t)\
+            (eq? 3 ((compose inc inc) 1))\
             )");
 
     console.log("Parsed in " + (Date.now() - start) + "ms");
@@ -786,6 +756,8 @@ var runTests = function() {
     assert((tests.indexOf("#f") === -1), "Test fail, #" + (tests.indexOf("#f") + 1));
     return "All tests passed in " + (Date.now() - start) + "ms";
 }
+
+
 var timeTests = function(num) {
     var start = Date.now()
     var tests = evaluate(compile(parse(

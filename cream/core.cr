@@ -17,6 +17,10 @@
         (js (cdr lst)))
     (define (cadr lst)
         (js (cadr lst)))
+    (define (caddr lst)
+        (js (caddr lst)))
+    (define (cadddr lst)
+        (js (cadddr lst)))
     (define (cons x y) (js (cons x y)))
     (define (and a b) 
         (js (and a b)))
@@ -41,7 +45,7 @@
         (* 2 x)) 
     (define (id x) x) 
     (define identity id) 
-    (define PI 3.14159265) 
+    (define PI 3.141592653589793) 
     (define (sum x y) 
         (+ x y)) 
     (define add2 (sum 2)) 
@@ -78,6 +82,7 @@
         (lambda (x) (build-lambda '() x)))
 
     (define delay freeze)
+    (define (test) (require 'tests))
     (defmacro let 
         (lambda (vars body)
             (append 
